@@ -40,7 +40,7 @@ def robust_data_parser(file):
         raw_df.columns = raw_df.columns.astype(str).str.strip()
         
         # ----------------------------------------------------
-        # STRATEGY A: COMPLEX HORIZONTAL MATRIX CHECK (Matches your custom file format)
+        # STRATEGY A: COMPLEX HORIZONTAL MATRIX CHECK
         # ----------------------------------------------------
         month_year_pattern = re.compile(r'\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[-_\s]?\d{2,4}\b', re.IGNORECASE)
         
@@ -98,7 +98,7 @@ def robust_data_parser(file):
                 return final_df, breakdown_df, False
 
         # ----------------------------------------------------
-        # STRATEGY B: FLAT RECTANGULAR LAYOUT (Vertical Columns: Date + Value)
+        # STRATEGY B: FLAT RECTANGULAR LAYOUT
         # ----------------------------------------------------
         date_cols = None
         numeric_cols = None
@@ -152,7 +152,7 @@ if is_demo:
     
     breakdown_df = pd.DataFrame({
         'Product': ['Item A', 'Item B', 'Item C', 'Item D', 'Item E'],
-        'Total_Volume': [1000, 1500, 1200, 900, 1100]
+        'Total_Volume': [500, 400, 300, 200, 100]
     })
 
 # --- 4. DYNAMIC DATE SELECTION FILTERS ---
@@ -172,7 +172,7 @@ filtered_df = df[(df['Year'].isin(selected_years)) & (df['Month_Name'].isin(sele
 if filtered_df.empty or len(filtered_df) < 2:
     pd_stream.error("⚠️ Keep at least two data point blocks selected in the timeframe parameters to calculate model arrays.")
 else:
-    # 5. ML Prophet Core Training execution (FIXED: yearly_seasonality=False to avoid crashes on 1-year sheets)
+    # 5. ML Prophet Core Training execution
     model = Prophet(yearly_seasonality=False, weekly_seasonality=False, daily_seasonality=False)
     model.fit(filtered_df[['ds', 'y']])
     
@@ -203,3 +203,5 @@ else:
         col_c1, col_c2 = pd_stream.columns(2)
         with col_c1:
             pd_stream.subheader("Structural Share Distribution Matrix")
+            fig_pie = px.pie(breakdown_df, values='Total_Volume', names='Product', color_discrete_sequence=px.colors.qualitative.Safe, hole=0.45)
+            pd_stream.plotly_chart(fig_pie, use_container_width=True)
