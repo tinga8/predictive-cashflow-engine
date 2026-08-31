@@ -4,6 +4,7 @@ import numpy as np
 from prophet import Prophet
 import plotly.graph_objects as go
 import plotly.express as px
+import re
 
 # Set up the web page layout
 pd_stream.set_page_config(page_title="Universal AI Forecaster", layout="wide")
@@ -41,14 +42,15 @@ def robust_data_parser(file):
         # ----------------------------------------------------
         # STRATEGY A: COMPLEX HORIZONTAL MATRIX CHECK (Matches your custom file format)
         # ----------------------------------------------------
-        # Identify columns that are explicitly date strings or contain numbers
+        # Explicit regex pattern to scan for true month-year indicators (e.g. 'Jan-2024')
+        month_year_pattern = re.compile(r'\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[-_\s]?\d{2,4}\b', re.IGNORECASE)
+        
         valid_time_headers = []
         text_cols = []
         
         for col in raw_df.columns:
-            # Match columns like 'Jan-2024', 'Feb-2024' or dates containing hyphens/slashes
-            if '-' in col or '/' in col or any(m in col.lower() for m in ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']):
-                # Exclude calculated growth and forecast parameters
+            # Explicit lookups checking if a column header string is a true date interval match
+            if month_year_pattern.search(col):
                 if "growth" not in col.lower() and "forecast" not in col.lower():
                     valid_time_headers.append(col)
             else:
@@ -73,7 +75,7 @@ def robust_data_parser(file):
             row_items = valid_rows[label_col].unique().tolist()
             
             # Clean out placeholder strings or blank names
-            row_items = [item for item in row_items if item and item.lower() not in ['nan', 'none', 'category', 'product']]
+            row_items = [item for item in row_items if item and item.lower() not in ['nan', 'none', 'category', 'product', 'beverages', 'snacks', 'dairy', 'frozen foods', 'personal care']]
             
             if row_items:
                 selected_item = pd_stream.sidebar.selectbox("🎯 Select Target Row to Forecast", row_items)
