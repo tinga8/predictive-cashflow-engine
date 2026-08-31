@@ -36,7 +36,7 @@ pd_stream.sidebar.markdown("---")
 pd_stream.sidebar.header("📂 Data Source")
 uploaded_file = pd_stream.sidebar.file_uploader("Upload financial Excel or CSV files", type=["xlsx", "csv"])
 
-# 2. FIXED DATA INGESTION MATRIX (CAPTURES BOTH 2024 AND 2025 COLUMNS)
+# 2. DATA INGESTION MATRIX
 def parse_financial_data(file):
     try:
         if file.name.endswith('.csv'):
@@ -50,7 +50,7 @@ def parse_financial_data(file):
         # Clean header formatting spaces
         raw_df.columns = raw_df.columns.astype(str).str.strip()
         
-        # Isolate true numerical data headers (Extracts standard months and forecast price months)
+        # Isolate true numerical data headers
         month_year_pattern = re.compile(r'\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[-_\s]?\d{2,4}\b', re.IGNORECASE)
         
         time_headers = []
@@ -58,7 +58,6 @@ def parse_financial_data(file):
         
         for col in raw_df.columns:
             if month_year_pattern.search(col):
-                # FIXED: Filter out growth percentages, but ALLOW Forecast Price columns to map 2025
                 if "growth %" not in col.lower():
                     time_headers.append(col)
             else:
@@ -89,7 +88,6 @@ def parse_financial_data(file):
                 values_list = []
                 for col in time_headers:
                     val = product_data_row[col]
-                    # Extract date component cleanly from headers like "Jan-2025 Forecast Price"
                     date_match = month_year_pattern.search(col)
                     if date_match:
                         dt_parsed = pd.to_datetime(date_match.group(), errors='coerce')
@@ -98,10 +96,8 @@ def parse_financial_data(file):
                             dates_list.append(dt_parsed)
                         
                 final_series_df = pd.DataFrame({'ds': dates_list, 'y': values_list})
-                # Drop duplicate month mappings and sort sequentially
                 final_series_df = final_series_df.groupby('ds', as_index=False).last().sort_values('ds').reset_index(drop=True)
                 
-                # Allocation Summary Matrix for Pie Charts
                 allocation_array = []
                 for p in available_products:
                     try:
@@ -112,11 +108,11 @@ def parse_financial_data(file):
                         pass
                 breakdown_df = pd.DataFrame(allocation_array)
                 
-                pd_stream.sidebar.success(f"✅ Ingested 2024 Actuals + 2025 Pipeline targets for: {selected_product}")
+                pd_stream.sidebar.success(f"✅ Ingested Data Successfully for: {selected_product}")
                 return final_series_df, breakdown_df, False
                 
         return None, None, True
-    except Exception as e:
+    except:
         return None, None, True
 
 # Route active datasets
@@ -163,7 +159,7 @@ filtered_df = df[(df['Year'].isin(selected_years)) & (df['Month_Name'].isin(sele
 if filtered_df.empty or len(filtered_df) < 2:
     pd_stream.error("⚠️ Filter Error: Please expand your Year/Month filter selections to include at least 2 historical data periods.")
 else:
-    # 4. PREDICTIVE FORECASTING ENGINE (Prophet models full 2024+2025 data and extends to 2026)
+    # 4. PREDICTIVE FORECASTING ENGINE
     has_sufficient_breadth = len(selected_years) > 1
     model = Prophet(yearly_seasonality=has_sufficient_breadth, weekly_seasonality=False, daily_seasonality=False)
     model.fit(filtered_df[['ds', 'y']])
@@ -182,7 +178,7 @@ else:
     combined_rendering_df = pd.concat([historical_clean, forecast_clean], ignore_index=True)
 
     # 5. DYNAMIC INTERACTIVE VISUALIZATION MATRIX
-    pd_stream.subheader(f"🎨 Active Canvas Profile: {chart_selection.split('(')[0].strip()}")
+    pd_stream.subheader(f"🎨 Active Canvas Profile: {chart_selection}")
     
     if "Line Chart" in chart_selection:
         fig_line = go.Figure()
@@ -200,3 +196,15 @@ else:
             y='Value', 
             color='Data Type', 
             barmode='group',
+            color_discrete_map={'Historical/Pre-Calculated Actuals': '#333333', 'AI Future Projection (2026 Target)': '#0066cc'},
+            labels={'ds': 'Timeline Interval', 'Value': 'Valuation Balance ($)'}
+        )
+        fig_bar.update_layout(template="plotly_white")
+        pd_stream.plotly_chart(fig_bar, use_container_width=True)
+        
+    elif "Stacked Area Chart" in chart_selection:
+        fig_area = px.area(
+            combined_rendering_df, 
+            x='ds', 
+            y='Value', 
+            color='Data Type',
