@@ -6,13 +6,27 @@ import plotly.graph_objects as go
 import plotly.express as px
 
 # Set up the web page layout
-pd_stream.set_page_config(page_title="AI Corporate Financial Dashboard", layout="wide")
-pd_stream.title("📊 Enterprise Predictive Revenue Analytics Dashboard")
-pd_stream.caption("Built with Python, Meta's Prophet & Plotly | Comprehensive Portfolio Business Intelligence View")
+pd_stream.set_page_config(page_title="Power BI & Office Style AI Forecaster", layout="wide")
+pd_stream.title("📊 Power BI & MS Office Style Financial Forecasting Canvas")
+pd_stream.caption("Built with Python, Meta's Prophet & Plotly | Multi-Chart Dynamic Selection Engine")
 
 # 1. Generate Interactive Inputs in Sidebar
 pd_stream.sidebar.header("🎛️ Model Parameters")
 forecast_months = pd_stream.sidebar.slider("Forecast Horizon (Months)", 3, 24, 12)
+
+# --- NEW: DYNAMIC CHART TYPE SELECTOR (Power BI / MS Office Style) ---
+pd_stream.sidebar.markdown("---")
+pd_stream.sidebar.header("📈 Visualization Settings")
+chart_selection = pd_stream.sidebar.selectbox(
+    "Select Chart Type (Excel / Power BI Styles)",
+    [
+        "📉 Line Chart (Forecast with Confidence Bounds)",
+        "📊 Column/Bar Chart (Historical vs. Forecast Trend)",
+        "⛰️ Area Chart (Cumulative Structural Volume)",
+        "🍩 Donut / Pie Chart (Category Contribution Share)",
+        "📋 Ledger Matrix (Pure Tabular Accounting View)"
+    ]
+)
 
 # Section: File Management in Sidebar
 pd_stream.sidebar.markdown("---")
@@ -32,17 +46,16 @@ def process_uploaded_data(file):
             raw_df = pd.read_excel(file)
             
         raw_df.columns = raw_df.columns.str.strip()
-        first_col = raw_df.columns[0]
+        first_col = raw_df.columns
         
         # Complex multi-product spreadsheet parse sequence
         if "Category" in first_col or "Product" in first_col:
             raw_df[first_col] = raw_df[first_col].astype(str).str.strip()
-            # Drop empty row indicators
             valid_df = raw_df[raw_df.iloc[:, 1].notna()]
             valid_products = valid_df[first_col].tolist()
             
             selected_item = pd_stream.sidebar.selectbox("🎯 Select Product to Forecast", valid_products)
-            product_row = raw_df[raw_df[first_col] == selected_item].iloc[0]
+            product_row = raw_df[raw_df[first_col] == selected_item].iloc
             
             months_2024 = ['Jan-2024', 'Feb-2024', 'Mar-2024', 'Apr-2024', 'May-2024', 'Jun-2024', 
                            'Jul-2024', 'Aug-2024', 'Sep-2024', 'Oct-2024', 'Nov-2024', 'Dec-2024']
@@ -56,7 +69,7 @@ def process_uploaded_data(file):
             breakdown_dict = {}
             for prod in valid_products:
                 try:
-                    row_vals = valid_df[valid_df[first_col] == prod].iloc[0]
+                    row_vals = valid_df[valid_df[first_col] == prod].iloc
                     breakdown_dict[prod] = sum([float(row_vals[m]) for m in months_2024])
                 except:
                     pass
@@ -64,11 +77,9 @@ def process_uploaded_data(file):
             
             pd_stream.sidebar.success(f"🎉 Fully loaded data structures for: {selected_item}")
             return final_df, breakdown_df, False
-
         else:
             pd_stream.sidebar.error("❌ Column layout must use exact 'Category / Product' headers from template.")
             return None, None, True
-            
     except Exception as e:
         pd_stream.sidebar.error(f"❌ Core Parse Failure: {e}")
         return None, None, True
@@ -85,14 +96,12 @@ if is_demo:
     if uploaded_file is None:
         pd_stream.info("💡 **Demo Mode Activated:** Showing complete chart matrices with simulation data. Drop your sheet in the sidebar to sync your specific business units!")
     
-    # Generate balanced mock timelines
     dates = pd.date_range(start="2024-01-01", end="2025-12-01", freq="MS")
     trend = np.linspace(2500, 5000, len(dates))
     seasonal_effect = np.sin(np.arange(len(dates)) * (2 * np.pi / 12)) * 800
     revenue = trend + seasonal_effect + np.random.normal(0, 100, len(dates))
     df = pd.DataFrame({'ds': dates, 'y': revenue})
     
-    # Generate default category volume mapping
     breakdown_df = pd.DataFrame({
         'Product': ['Cola', 'Juice', 'Chips', 'Nuts', 'Cookies', 'Milk', 'Cheese', 'Pizza', 'Ice Cream'],
         'Total_Volume': [445.2, 420.5, 395.1, 350.8, 380.2, 310.4, 290.9, 410.3, 460.7]
@@ -105,52 +114,76 @@ model.fit(df[['ds', 'y']])
 future = model.make_future_dataframe(periods=forecast_months, freq='MS')
 forecast = model.predict(future)
 
-# --- VISUALIZATION TABS FRAMEWORK ---
-tab1, tab2, tab3 = pd_stream.tabs(["📈 Primary Forecast Canvas", "📊 Component Breakdown Matrix", "📋 Tabular Inferences"])
+# Combine historical actuals and forecast dataset for uniform charting structures
+historical_clean = df[['ds', 'y']].copy().rename(columns={'y': 'Value'})
+historical_clean['Type'] = 'Historical Actual'
 
-with tab1:
-    pd_stream.subheader("Predictive Horizon Curve and Variance Bounds")
-    
-    # Interactive Main Line & Area Chart
+forecast_clean = forecast[['ds', 'yhat']].tail(forecast_months).copy().rename(columns={'yhat': 'Value'})
+forecast_clean['Type'] = 'AI Forecast'
+
+combined_chart_df = pd.concat([historical_clean, forecast_clean], ignore_index=True)
+
+# --- 4. CONDITIONAL RENDER SPACE (Based on selection menu) ---
+pd_stream.subheader(f"🎨 Active Workspace Canvas: {chart_selection.split('(')[0].strip()}")
+
+if "Line Chart" in chart_selection:
     fig_line = go.Figure()
-    fig_line.add_trace(go.Scatter(x=df['ds'], y=df['y'], name="Historical Financial Record", mode='markers+lines', line=dict(color='#222222'), marker=dict(size=6)))
-    fig_line.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'], name="AI Projected Metric (Median)", line=dict(color='#0066cc', width=3)))
-    fig_line.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_upper'], name="Upper Ceiling (Optimistic Target)", line=dict(dash='dash', color='rgba(0,102,204,0.3)')))
-    fig_line.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_lower'], name="Lower Floor (Conservative Target)", line=dict(dash='dash', color='rgba(0,102,204,0.3)'), fill='tonexty'))
-    
-    fig_line.update_layout(xaxis_title="Timeline Interval", yaxis_title="Valuation Scale ($)", template="plotly_white", margin=dict(l=20, r=20, t=20, b=20))
+    fig_line.add_trace(go.Scatter(x=df['ds'], y=df['y'], name="Historical Actuals", mode='markers+lines', line=dict(color='#222222'), marker=dict(size=6)))
+    fig_line.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'], name="AI Projected Median", line=dict(color='#1f77b4', width=3)))
+    fig_line.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_upper'], name="Upper Confidence Interval", line=dict(dash='dash', color='rgba(31,119,180,0.3)')))
+    fig_line.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_lower'], name="Lower Confidence Interval", line=dict(dash='dash', color='rgba(31,119,180,0.3)'), fill='tonexty'))
+    fig_line.update_layout(xaxis_title="Timeline", yaxis_title="Valuation ($)", template="plotly_white")
     pd_stream.plotly_chart(fig_line, use_container_width=True)
 
-with tab2:
-    col_chart1, col_chart2 = pd_stream.columns(2)
-    
-    with col_chart1:
-        pd_stream.subheader("🍰 Product Category Volume Allocation")
-        # Dynamic Pie Chart showing volume market share splits
-        fig_pie = px.pie(breakdown_df, values='Total_Volume', names='Product', color_discrete_sequence=px.colors.qualitative.Prism, hole=0.4)
-        fig_pie.update_layout(margin=dict(l=20, r=20, t=20, b=20))
-        pd_stream.plotly_chart(fig_pie, use_container_width=True)
-        
-    with col_chart2:
-        pd_stream.subheader("🪟 Monthly Scaling Velocities")
-        # Bar Chart showing monthly historical actual steps
-        fig_bar = px.bar(df, x='ds', y='y', color='y', labels={'ds': 'Timeline', 'y': 'Valuation'}, color_continuous_scale=px.colors.sequential.Blugrn)
-        fig_bar.update_layout(template="plotly_white", margin=dict(l=20, r=20, t=20, b=20), coloraxis_showscale=False)
-        pd_stream.plotly_chart(fig_bar, use_container_width=True)
+elif "Column/Bar Chart" in chart_selection:
+    # Classic Power BI split bar chart format
+    fig_bar = px.bar(
+        combined_chart_df, 
+        x='ds', 
+        y='Value', 
+        color='Type',
+        barmode='group',
+        color_discrete_map={'Historical Actual': '#333333', 'AI Forecast': '#1f77b4'},
+        labels={'ds': 'Timeline', 'Value': 'Valuation ($)'}
+    )
+    fig_bar.update_layout(template="plotly_white")
+    pd_stream.plotly_chart(fig_bar, use_container_width=True)
 
-with tab3:
-    pd_stream.subheader("📋 Algorithmic Projections Ledger")
-    
-    # Format precise output data tables
+elif "Area Chart" in chart_selection:
+    # Office Styled shaded area distribution setup
+    fig_area = px.area(
+        combined_chart_df, 
+        x='ds', 
+        y='Value', 
+        color='Type',
+        color_discrete_map={'Historical Actual': 'rgba(51,51,51,0.6)', 'AI Forecast': 'rgba(31,119,180,0.6)'},
+        labels={'ds': 'Timeline', 'Value': 'Valuation ($)'}
+    )
+    fig_area.update_layout(template="plotly_white")
+    pd_stream.plotly_chart(fig_area, use_container_width=True)
+
+elif "Donut / Pie Chart" in chart_selection:
+    # Corporate portfolio breakdown share format
+    fig_pie = px.pie(
+        breakdown_df, 
+        values='Total_Volume', 
+        names='Product', 
+        color_discrete_sequence=px.colors.qualitative.Safe, 
+        hole=0.45
+    )
+    pd_stream.plotly_chart(fig_pie, use_container_width=True)
+
+elif "Ledger Matrix" in chart_selection:
+    # Tabular Ledger View
     forecast_table = forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].tail(forecast_months).copy()
     forecast_table['ds'] = forecast_table['ds'].dt.strftime('%B %Y')
-    forecast_table.columns = ['Target Forecast Month', 'Expected Value (Midpoint)', 'Minimum Bound (Floor)', 'Maximum Bound (Ceiling)']
+    forecast_table.columns = ['Target Forecast Month', 'Expected Midpoint Value', 'Minimum Floor', 'Maximum Ceiling']
     
     pd_stream.dataframe(
         forecast_table.style.format({
-            'Expected Value (Midpoint)': '${:,.2f}', 
-            'Minimum Bound (Floor)': '${:,.2f}', 
-            'Maximum Bound (Ceiling)': '${:,.2f}'
+            'Expected Midpoint Value': '${:,.2f}', 
+            'Minimum Floor': '${:,.2f}', 
+            'Maximum Ceiling': '${:,.2f}'
         }), 
         use_container_width=True, 
         hide_index=True
