@@ -42,39 +42,31 @@ def robust_data_parser(file):
         # ----------------------------------------------------
         # STRATEGY A: COMPLEX HORIZONTAL MATRIX CHECK (Matches your custom file format)
         # ----------------------------------------------------
-        # Explicit regex pattern to scan for true month-year indicators (e.g. 'Jan-2024')
         month_year_pattern = re.compile(r'\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[-_\s]?\d{2,4}\b', re.IGNORECASE)
         
         valid_time_headers = []
         text_cols = []
         
         for col in raw_df.columns:
-            # Explicit lookups checking if a column header string is a true date interval match
             if month_year_pattern.search(col):
                 if "growth" not in col.lower() and "forecast" not in col.lower():
                     valid_time_headers.append(col)
             else:
                 text_cols.append(col)
                 
-        # If we found time columns and at least one text description column
         if valid_time_headers and text_cols:
-            # Pick the primary descriptive identifier column (first text column)
             label_col = text_cols[0]
             
-            # Clean missing text rows and strip hidden spaces
             cleaned_df = raw_df[raw_df[label_col].notna()].copy()
             cleaned_df[label_col] = cleaned_df[label_col].astype(str).str.strip()
             
-            # Keep rows that have actual valid financial numbers across time columns
             valid_rows = cleaned_df.copy()
             for col in valid_time_headers:
                 valid_rows[col] = pd.to_numeric(valid_rows[col], errors='coerce')
                 
-            # Drop empty metadata rows
             valid_rows = valid_rows.dropna(subset=valid_time_headers, how='all')
             row_items = valid_rows[label_col].unique().tolist()
             
-            # Clean out placeholder strings or blank names
             row_items = [item for item in row_items if item and item.lower() not in ['nan', 'none', 'category', 'product', 'beverages', 'snacks', 'dairy', 'frozen foods', 'personal care']]
             
             if row_items:
@@ -92,7 +84,6 @@ def robust_data_parser(file):
                         
                 final_df = pd.DataFrame({'ds': timeline_array, 'y': values_array}).sort_values('ds').reset_index(drop=True)
                 
-                # Build Allocation chart structures safely
                 allocation_list = []
                 for item in row_items:
                     try:
@@ -161,7 +152,7 @@ if is_demo:
     
     breakdown_df = pd.DataFrame({
         'Product': ['Item A', 'Item B', 'Item C', 'Item D', 'Item E'],
-        'Total_Volume': [500, 400, 300, 200, 100]
+        'Total_Volume': [1000, 1500, 1200, 900, 1100]
     })
 
 # --- 4. DYNAMIC DATE SELECTION FILTERS ---
@@ -181,8 +172,8 @@ filtered_df = df[(df['Year'].isin(selected_years)) & (df['Month_Name'].isin(sele
 if filtered_df.empty or len(filtered_df) < 2:
     pd_stream.error("⚠️ Keep at least two data point blocks selected in the timeframe parameters to calculate model arrays.")
 else:
-    # 5. ML Prophet Core Training execution
-    model = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False)
+    # 5. ML Prophet Core Training execution (FIXED: yearly_seasonality=False to avoid crashes on 1-year sheets)
+    model = Prophet(yearly_seasonality=False, weekly_seasonality=False, daily_seasonality=False)
     model.fit(filtered_df[['ds', 'y']])
     
     future = model.make_future_dataframe(periods=forecast_months, freq='MS')
@@ -204,3 +195,11 @@ else:
         fig_line.add_trace(go.Scatter(x=filtered_df['ds'], y=filtered_df['y'], name="Actual Historical Metrics", mode='markers+lines', line=dict(color='#222222'), marker=dict(size=6)))
         fig_line.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'], name="AI Projected Median", line=dict(color='#0066cc', width=3)))
         fig_line.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_upper'], name="Upper Target Ceiling", line=dict(dash='dash', color='rgba(0,102,204,0.3)')))
+        fig_line.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_lower'], name="Lower Operational Floor", line=dict(dash='dash', color='rgba(0,102,204,0.3)'), fill='tonexty'))
+        fig_line.update_layout(xaxis_title="Timeline Interval", yaxis_title="Valuation Scale ($)", template="plotly_white")
+        pd_stream.plotly_chart(fig_line, use_container_width=True)
+        
+    with tab2:
+        col_c1, col_c2 = pd_stream.columns(2)
+        with col_c1:
+            pd_stream.subheader("Structural Share Distribution Matrix")
