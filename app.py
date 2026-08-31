@@ -41,23 +41,65 @@ forecast = model.predict(future)
 
 # 4. Create Interactive Charts
 fig = go.Figure()
-# Historical Data
-fig.add_trace(go.Scatter(x=df['ds'], y=df['y'], name="Historical Revenue", mode='markers', marker=dict(color='black', size=2)))
-# Forecasted Line
-fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['y'], name="Forecasted Revenue", line=dict(color='#0066cc', width=2)))
-# Uncertainty Bounds
-fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['y_upper'], name="Upper Bound (Best Case)", line=dict(dash='dash', color='rgba(0,102,204,0.3)')))
-fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['y_lower'], name="Lower Bound (Worst Case)", line=dict(dash='dash', color='rgba(0,102,204,0.3)'), fill='tonexty'))
 
-fig.update_layout(title="Interactive Revenue Forecast Model", xaxis_title="Date", yaxis_title="Amount ($)", template="plotly_white")
+# Historical Data
+fig.add_trace(go.Scatter(
+    x=df['ds'], 
+    y=df['y'], 
+    name="Historical Revenue", 
+    mode='markers', 
+    marker=dict(color='black', size=2)
+))
+
+# Forecasted Line (Fixed to yhat)
+fig.add_trace(go.Scatter(
+    x=forecast['ds'], 
+    y=forecast['yhat'], 
+    name="Forecasted Revenue", 
+    line=dict(color='#0066cc', width=2)
+))
+
+# Uncertainty Upper Bound (Fixed to yhat_upper)
+fig.add_trace(go.Scatter(
+    x=forecast['ds'], 
+    y=forecast['yhat_upper'], 
+    name="Upper Bound (Best Case)", 
+    line=dict(dash='dash', color='rgba(0,102,204,0.3)')
+))
+
+# Uncertainty Lower Bound (Fixed to yhat_lower)
+fig.add_trace(go.Scatter(
+    x=forecast['ds'], 
+    y=forecast['yhat_lower'], 
+    name="Lower Bound (Worst Case)", 
+    line=dict(dash='dash', color='rgba(0,102,204,0.3)'), 
+    fill='tonexty'
+))
+
+fig.update_layout(
+    title="Interactive Revenue Forecast Model", 
+    xaxis_title="Date", 
+    yaxis_title="Amount ($)", 
+    template="plotly_white"
+)
 
 # Display on web dashboard
 pd_stream.plotly_chart(fig, use_container_width=True)
 
-# 5. Show Metrics Summary
+# 5. Show Metrics Summary (Fixed to yhat variables)
 pd_stream.subheader("📊 Key Predictive Inferences")
 col1, col2 = pd_stream.columns(2)
 with col1:
-    pd_stream.metric(label="Predicted Final Day Revenue", value=f"${forecast['y'].iloc[-1]:,.2f}")
+    pd_stream.metric(
+        label="Predicted Final Day Revenue", 
+        value=f"${forecast['yhat'].iloc[-1]:,.2f}"
+    )
 with col2:
-    pd_stream.metric(label="Model Uncertainty Range", value=f"± ${(forecast['y_upper'].iloc[-1] - forecast['y_lower'].iloc[-1])/2:,.2f}")
+    uncertainty_range = (forecast['yhat_upper'].iloc[-1] - forecast['yhat_lower'].iloc[-1]) / 2
+    pd_stream.metric(
+        label="Model Uncertainty Range", 
+        value=f"± ${uncertainty_range:,.2f}"
+    )
+
+
+
