@@ -136,6 +136,7 @@ if is_demo:
     revenue = trend + seasonal_effect + np.random.normal(0, 40, len(dates))
     df = pd.DataFrame({'ds': dates, 'y': revenue})
     
+    # FIXED EMPTY ARRAY ASSIGNMENT HERE
     breakdown_df = pd.DataFrame({
         'Product': ['Beverages', 'Snacks', 'Dairy Products', 'Frozen Deliveries', 'Personal Care Items'],
         'Total_Volume': [15200.40, 12400.80, 9800.20, 11500.60, 8400.10]
