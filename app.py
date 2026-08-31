@@ -38,60 +38,42 @@ def robust_data_parser(file):
         # Clean column metadata structures
         raw_df.columns = raw_df.columns.astype(str).str.strip()
         
-        # Step A: Identify types of columns present
-        numeric_cols = None
-        text_cols = None
-        date_cols = None
+        # ----------------------------------------------------
+        # STRATEGY A: COMPLEX HORIZONTAL MATRIX CHECK (Matches your custom file format)
+        # ----------------------------------------------------
+        # Identify columns that are explicitly date strings or contain numbers
+        valid_time_headers = []
+        text_cols = []
         
         for col in raw_df.columns:
-            # Check if column is primary date-like structures
-            parsed_dates = pd.to_datetime(raw_df[col], errors='coerce')
-            if parsed_dates.notna().sum() > len(raw_df) * 0.4:
-                date_cols = col
-                continue
-                
-            # Check if column is numeric metrics
-            parsed_nums = pd.to_numeric(raw_df[col], errors='coerce')
-            if parsed_nums.notna().sum() > len(raw_df) * 0.4:
-                numeric_cols = col
-            else:
-                text_cols = col
-
-        # ----------------------------------------------------
-        # SCENARIO 1: FLAT RECTANGULAR LAYOUT (Vertical Columns: Date + Value)
-        # ----------------------------------------------------
-        if date_cols and numeric_cols:
-            flat_df = raw_df[[date_cols, numeric_cols]].copy()
-            flat_df.columns = ['ds', 'y']
-            flat_df['ds'] = pd.to_datetime(flat_df['ds'], errors='coerce')
-            flat_df['y'] = pd.to_numeric(flat_df['y'], errors='coerce')
-            flat_df = flat_df.dropna().sort_values('ds').reset_index(drop=True)
-            
-            # Aggregate down to Month-Start boundaries
-            flat_df['ds'] = flat_df['ds'].dt.to_period('M').dt.to_timestamp()
-            flat_df = flat_df.groupby('ds', as_index=False).sum()
-            
-            breakdown_df = pd.DataFrame({'Product': ['Database Ledger Target'], 'Total_Volume': [flat_df['y'].sum()]})
-            pd_stream.sidebar.success("🚀 Auto-Detected: Vertical Timeline Format")
-            return flat_df, breakdown_df, False
-
-        # ----------------------------------------------------
-        # SCENARIO 2: MATRIX HORIZONTAL LAYOUT (Rows = Items, Columns = Time series)
-        # ----------------------------------------------------
-        valid_time_headers = []
-        for col in raw_df.columns:
-            if pd.to_datetime(col, errors='coerce') is not pd.NaT or '-' in col:
-                if pd.to_numeric(raw_df[col], errors='coerce').notna().sum() > 0:
+            # Match columns like 'Jan-2024', 'Feb-2024' or dates containing hyphens/slashes
+            if '-' in col or '/' in col or any(m in col.lower() for m in ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']):
+                # Exclude calculated growth and forecast parameters
+                if "growth" not in col.lower() and "forecast" not in col.lower():
                     valid_time_headers.append(col)
-                    
+            else:
+                text_cols.append(col)
+                
+        # If we found time columns and at least one text description column
         if valid_time_headers and text_cols:
-            label_col = text_cols
+            # Pick the primary descriptive identifier column (first text column)
+            label_col = text_cols[0]
             
+            # Clean missing text rows and strip hidden spaces
             cleaned_df = raw_df[raw_df[label_col].notna()].copy()
             cleaned_df[label_col] = cleaned_df[label_col].astype(str).str.strip()
             
-            valid_rows = cleaned_df[pd.to_numeric(cleaned_df[valid_time_headers], errors='coerce').notna()]
+            # Keep rows that have actual valid financial numbers across time columns
+            valid_rows = cleaned_df.copy()
+            for col in valid_time_headers:
+                valid_rows[col] = pd.to_numeric(valid_rows[col], errors='coerce')
+                
+            # Drop empty metadata rows
+            valid_rows = valid_rows.dropna(subset=valid_time_headers, how='all')
             row_items = valid_rows[label_col].unique().tolist()
+            
+            # Clean out placeholder strings or blank names
+            row_items = [item for item in row_items if item and item.lower() not in ['nan', 'none', 'category', 'product']]
             
             if row_items:
                 selected_item = pd_stream.sidebar.selectbox("🎯 Select Target Row to Forecast", row_items)
@@ -100,7 +82,7 @@ def robust_data_parser(file):
                 timeline_array = []
                 values_array = []
                 for col in valid_time_headers:
-                    val = pd.to_numeric(target_row[col], errors='coerce')
+                    val = target_row[col]
                     parsed_dt = pd.to_datetime(col, errors='coerce')
                     if pd.notna(val) and pd.notna(parsed_dt):
                         values_array.append(float(val))
@@ -108,11 +90,12 @@ def robust_data_parser(file):
                         
                 final_df = pd.DataFrame({'ds': timeline_array, 'y': values_array}).sort_values('ds').reset_index(drop=True)
                 
+                # Build Allocation chart structures safely
                 allocation_list = []
                 for item in row_items:
                     try:
                         item_row = valid_rows[valid_rows[label_col] == item].iloc[0]
-                        total_v = sum([float(pd.to_numeric(item_row[c], errors='coerce')) for c in valid_time_headers if pd.notna(pd.to_numeric(item_row[c], errors='coerce'))])
+                        total_v = sum([float(item_row[c]) for c in valid_time_headers if pd.notna(item_row[c])])
                         allocation_list.append({'Product': item, 'Total_Volume': total_v})
                     except:
                         pass
@@ -120,6 +103,36 @@ def robust_data_parser(file):
                 breakdown_df = pd.DataFrame(allocation_list)
                 pd_stream.sidebar.success(f"🚀 Auto-Detected: Matrix Row Format ({selected_item})")
                 return final_df, breakdown_df, False
+
+        # ----------------------------------------------------
+        # STRATEGY B: FLAT RECTANGULAR LAYOUT (Vertical Columns: Date + Value)
+        # ----------------------------------------------------
+        date_cols = None
+        numeric_cols = None
+        
+        for col in raw_df.columns:
+            parsed_dates = pd.to_datetime(raw_df[col], errors='coerce')
+            if parsed_dates.notna().sum() > len(raw_df) * 0.4:
+                date_cols = col
+                continue
+                
+            parsed_nums = pd.to_numeric(raw_df[col], errors='coerce')
+            if parsed_nums.notna().sum() > len(raw_df) * 0.4:
+                numeric_cols = col
+
+        if date_cols and numeric_cols:
+            flat_df = raw_df[[date_cols, numeric_cols]].copy()
+            flat_df.columns = ['ds', 'y']
+            flat_df['ds'] = pd.to_datetime(flat_df['ds'], errors='coerce')
+            flat_df['y'] = pd.to_numeric(flat_df['y'], errors='coerce')
+            flat_df = flat_df.dropna().sort_values('ds').reset_index(drop=True)
+            
+            flat_df['ds'] = flat_df['ds'].dt.to_period('M').dt.to_timestamp()
+            flat_df = flat_df.groupby('ds', as_index=False).sum()
+            
+            breakdown_df = pd.DataFrame({'Product': ['Database Ledger Target'], 'Total_Volume': [flat_df['y'].sum()]})
+            pd_stream.sidebar.success("🚀 Auto-Detected: Vertical Timeline Format")
+            return flat_df, breakdown_df, False
 
         return None, None, True
     except:
@@ -189,15 +202,3 @@ else:
         fig_line.add_trace(go.Scatter(x=filtered_df['ds'], y=filtered_df['y'], name="Actual Historical Metrics", mode='markers+lines', line=dict(color='#222222'), marker=dict(size=6)))
         fig_line.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'], name="AI Projected Median", line=dict(color='#0066cc', width=3)))
         fig_line.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_upper'], name="Upper Target Ceiling", line=dict(dash='dash', color='rgba(0,102,204,0.3)')))
-        fig_line.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_lower'], name="Lower Operational Floor", line=dict(dash='dash', color='rgba(0,102,204,0.3)'), fill='tonexty'))
-        fig_line.update_layout(xaxis_title="Timeline Interval", yaxis_title="Valuation Scale ($)", template="plotly_white")
-        pd_stream.plotly_chart(fig_line, use_container_width=True)
-        
-    with tab2:
-        col_c1, col_c2 = pd_stream.columns(2)
-        with col_c1:
-            pd_stream.subheader("Structural Share Distribution Matrix")
-            fig_pie = px.pie(breakdown_df, values='Total_Volume', names='Product', color_discrete_sequence=px.colors.qualitative.Safe, hole=0.45)
-            pd_stream.plotly_chart(fig_pie, use_container_width=True)
-        with col_c2:
-            pd_stream.subheader("Chronological Volatility Distribution")
