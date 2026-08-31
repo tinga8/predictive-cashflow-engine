@@ -39,32 +39,29 @@ def robust_data_parser(file):
         raw_df.columns = raw_df.columns.astype(str).str.strip()
         
         # Step A: Identify types of columns present
-        numeric_cols = []
-        text_cols = []
-        date_cols = []
+        numeric_cols = None
+        text_cols = None
+        date_cols = None
         
         for col in raw_df.columns:
             # Check if column is primary date-like structures
             parsed_dates = pd.to_datetime(raw_df[col], errors='coerce')
             if parsed_dates.notna().sum() > len(raw_df) * 0.4:
-                date_cols.append(col)
+                date_cols = col
                 continue
                 
             # Check if column is numeric metrics
             parsed_nums = pd.to_numeric(raw_df[col], errors='coerce')
             if parsed_nums.notna().sum() > len(raw_df) * 0.4:
-                numeric_cols.append(col)
+                numeric_cols = col
             else:
-                text_cols.append(col)
+                text_cols = col
 
         # ----------------------------------------------------
         # SCENARIO 1: FLAT RECTANGULAR LAYOUT (Vertical Columns: Date + Value)
         # ----------------------------------------------------
         if date_cols and numeric_cols:
-            d_col = date_cols[0]
-            v_col = numeric_cols[0]
-            
-            flat_df = raw_df[[d_col, v_col]].copy()
+            flat_df = raw_df[[date_cols, numeric_cols]].copy()
             flat_df.columns = ['ds', 'y']
             flat_df['ds'] = pd.to_datetime(flat_df['ds'], errors='coerce')
             flat_df['y'] = pd.to_numeric(flat_df['y'], errors='coerce')
@@ -88,12 +85,12 @@ def robust_data_parser(file):
                     valid_time_headers.append(col)
                     
         if valid_time_headers and text_cols:
-            label_col = text_cols[0]
+            label_col = text_cols
             
             cleaned_df = raw_df[raw_df[label_col].notna()].copy()
             cleaned_df[label_col] = cleaned_df[label_col].astype(str).str.strip()
             
-            valid_rows = cleaned_df[pd.to_numeric(cleaned_df[valid_time_headers[0]], errors='coerce').notna()]
+            valid_rows = cleaned_df[pd.to_numeric(cleaned_df[valid_time_headers], errors='coerce').notna()]
             row_items = valid_rows[label_col].unique().tolist()
             
             if row_items:
@@ -203,3 +200,4 @@ else:
             fig_pie = px.pie(breakdown_df, values='Total_Volume', names='Product', color_discrete_sequence=px.colors.qualitative.Safe, hole=0.45)
             pd_stream.plotly_chart(fig_pie, use_container_width=True)
         with col_c2:
+            pd_stream.subheader("Chronological Volatility Distribution")
