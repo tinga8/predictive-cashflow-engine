@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from prophet import Prophet
 import plotly.graph_objects as go
+import io
 
 # Set up the web page layout
 pd_stream.set_page_config(page_title="AI Cashflow Forecaster", layout="wide")
@@ -13,11 +14,37 @@ pd_stream.caption("Built with Python & Meta's Prophet Library | Permanently Host
 pd_stream.sidebar.header("Model Parameters")
 forecast_days = pd_stream.sidebar.slider("Forecast Horizon (Days)", 30, 180, 90)
 
-# New Section: File Uploader in Sidebar
+# Section: File Management in Sidebar
 pd_stream.sidebar.markdown("---")
-pd_stream.sidebar.header("📂 Upload Your Data")
+pd_stream.sidebar.header("📂 Custom Data Input")
+
+# Create a sample template file in memory for users to download
+@pd_stream.cache_data
+def generate_sample_template():
+    # Make a tiny sample dataframe matching required formatting
+    sample_dates = pd.date_range(start="2026-01-01", periods=10, freq="D")
+    sample_values = [1500, 1620, 1480, 1550, 1700, 1950, 1300, 1510, 1600, 1650]
+    sample_df = pd.DataFrame({'Date': sample_dates, 'Value': sample_values})
+    
+    # Save to an excel bytes stream
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        sample_df.to_excel(writer, index=False, sheet_name='Sheet1')
+    return output.getvalue()
+
+template_data = generate_sample_template()
+
+# Add the template download button
+pd_stream.sidebar.download_button(
+    label="📥 Download Sample Excel Template",
+    data=template_data,
+    file_name="forecast_template.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
+# File Uploader
 uploaded_file = pd_stream.sidebar.file_uploader(
-    "Upload your historical data (Excel or CSV)", 
+    "Upload your customized file below", 
     type=["xlsx", "csv"]
 )
 
@@ -25,25 +52,22 @@ uploaded_file = pd_stream.sidebar.file_uploader(
 def load_data():
     if uploaded_file is not None:
         try:
-            # Check if it's CSV or Excel
             if uploaded_file.name.endswith('.csv'):
                 user_df = pd.read_csv(uploaded_file)
             else:
                 user_df = pd.read_excel(uploaded_file)
             
-            # Map user columns to Prophet format
-            # Expecting columns named 'Date' and 'Value'
             if 'Date' in user_df.columns and 'Value' in user_df.columns:
                 final_df = user_df[['Date', 'Value']].rename(columns={'Date': 'ds', 'Value': 'y'})
                 final_df['ds'] = pd.to_datetime(final_df['ds'])
-                pd_stream.sidebar.success("🎉 Data uploaded successfully!")
+                pd_stream.sidebar.success("🎉 Custom data loaded successfully!")
                 return final_df, False
             else:
-                pd_stream.sidebar.error("❌ Error: File must contain 'Date' and 'Value' columns.")
+                pd_stream.sidebar.error("❌ Column Layout Error: File must have exact 'Date' and 'Value' headers.")
         except Exception as e:
-            pd_stream.sidebar.error(f"❌ Error reading file: {e}")
+            pd_stream.sidebar.error(f"❌ Read Error: {e}")
             
-    # Fallback to simulated data if no file is uploaded or if upload fails
+    # Default mock behavior if nothing is uploaded
     np.random.seed(42)
     dates = pd.date_range(start="2024-01-01", end="2026-08-31", freq="D")
     n_days = len(dates)
@@ -59,7 +83,7 @@ def load_data():
 df, using_simulated = load_data()
 
 if using_simulated:
-    pd_stream.info("💡 Currently showing **simulated demonstration data**. Upload your own Excel file in the sidebar to see your own forecast!")
+    pd_stream.info("💡 **Demo Mode:** Showing generated mock telemetry. Use the template down in the left panel to inject your metrics!")
 
 # 3. Train Model and Run Forecast
 model = Prophet(yearly_seasonality=True, weekly_seasonality=True)
@@ -71,48 +95,43 @@ forecast = model.predict(future)
 # 4. Create Interactive Charts
 fig = go.Figure()
 
-# Historical Data
 fig.add_trace(go.Scatter(
     x=df['ds'], 
     y=df['y'], 
-    name="Historical Data", 
+    name="Historical Record", 
     mode='markers', 
-    marker=dict(color='black', size=3)
+    marker=dict(color='#222222', size=3)
 ))
 
-# Forecasted Line
 fig.add_trace(go.Scatter(
     x=forecast['ds'], 
     y=forecast['yhat'], 
-    name="AI Prediction", 
-    line=dict(color='#0066cc', width=2)
+    name="Predictive Median Target", 
+    line=dict(color='#0066cc', width=2.5)
 ))
 
-# Uncertainty Upper Bound
 fig.add_trace(go.Scatter(
     x=forecast['ds'], 
     y=forecast['yhat_upper'], 
-    name="Upper Bound (Best Case)", 
-    line=dict(dash='dash', color='rgba(0,102,204,0.3)')
+    name="Upper Ceiling Trend (Aggressive)", 
+    line=dict(dash='dash', color='rgba(0,102,204,0.25)')
 ))
 
-# Uncertainty Lower Bound
 fig.add_trace(go.Scatter(
     x=forecast['ds'], 
     y=forecast['yhat_lower'], 
-    name="Lower Bound (Worst Case)", 
-    line=dict(dash='dash', color='rgba(0,102,204,0.3)'), 
+    name="Lower Floor Trend (Conservative)", 
+    line=dict(dash='dash', color='rgba(0,102,204,0.25)'), 
     fill='tonexty'
 ))
 
 fig.update_layout(
-    title="Custom Predictive Forecast Model", 
-    xaxis_title="Date", 
-    yaxis_title="Value ($)", 
+    title="Custom Predictive Horizon Workspace", 
+    xaxis_title="Timeline Interval", 
+    yaxis_title="Currency Value ($)", 
     template="plotly_white"
 )
 
-# Display on web dashboard
 pd_stream.plotly_chart(fig, use_container_width=True)
 
 # 5. Show Metrics Summary
@@ -120,15 +139,12 @@ pd_stream.subheader("📊 Key Predictive Inferences")
 col1, col2 = pd_stream.columns(2)
 with col1:
     pd_stream.metric(
-        label="Predicted Final Day Value", 
+        label="Terminal Prediction Valuation", 
         value=f"${forecast['yhat'].iloc[-1]:,.2f}"
     )
 with col2:
     uncertainty_range = (forecast['yhat_upper'].iloc[-1] - forecast['yhat_lower'].iloc[-1]) / 2
     pd_stream.metric(
-        label="Model Uncertainty Range", 
+        label="Variance Uncertainty Band", 
         value=f"± ${uncertainty_range:,.2f}"
     )
-
-
-
