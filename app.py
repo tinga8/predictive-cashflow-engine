@@ -15,7 +15,7 @@ pd_stream.caption("Production-Grade Machine Learning Dashboard | Prophet Time-Se
 pd_stream.sidebar.header("🎛️ Dashboard Filters")
 
 # Forecast Timeline Slider
-forecast_months = pd_stream.sidebar.slider("Forecast Horizon (Future Months)", 3, 36, 12)
+forecast_months = pd_stream.sidebar.slider("Forecast Horizon (Future Months into 2026)", 3, 24, 12)
 
 # MS Office / Power BI Chart Selector Switch
 pd_stream.sidebar.markdown("---")
@@ -36,7 +36,7 @@ pd_stream.sidebar.markdown("---")
 pd_stream.sidebar.header("📂 Data Source")
 uploaded_file = pd_stream.sidebar.file_uploader("Upload financial Excel or CSV files", type=["xlsx", "csv"])
 
-# 2. DATA INGESTION MATRIX
+# 2. FIXED DATA INGESTION MATRIX (CAPTURES BOTH 2024 AND 2025 COLUMNS)
 def parse_financial_data(file):
     try:
         if file.name.endswith('.csv'):
@@ -50,7 +50,7 @@ def parse_financial_data(file):
         # Clean header formatting spaces
         raw_df.columns = raw_df.columns.astype(str).str.strip()
         
-        # Regex to isolate time data layout arrays (e.g. 'Jan-2024')
+        # Isolate true numerical data headers (Extracts standard months and forecast price months)
         month_year_pattern = re.compile(r'\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[-_\s]?\d{2,4}\b', re.IGNORECASE)
         
         time_headers = []
@@ -58,12 +58,13 @@ def parse_financial_data(file):
         
         for col in raw_df.columns:
             if month_year_pattern.search(col):
-                if "growth" not in col.lower() and "forecast" not in col.lower():
+                # FIXED: Filter out growth percentages, but ALLOW Forecast Price columns to map 2025
+                if "growth %" not in col.lower():
                     time_headers.append(col)
             else:
                 descriptive_headers.append(col)
                 
-        # SCENARIO A: Complex Horizontal Matrix Sheet
+        # Complex Horizontal Matrix Sheet Parsing Sequence
         if time_headers and descriptive_headers:
             label_col = descriptive_headers[0]
             
@@ -88,12 +89,17 @@ def parse_financial_data(file):
                 values_list = []
                 for col in time_headers:
                     val = product_data_row[col]
-                    dt_parsed = pd.to_datetime(col, errors='coerce')
-                    if pd.notna(val) and pd.notna(dt_parsed):
-                        values_list.append(float(val))
-                        dates_list.append(dt_parsed)
+                    # Extract date component cleanly from headers like "Jan-2025 Forecast Price"
+                    date_match = month_year_pattern.search(col)
+                    if date_match:
+                        dt_parsed = pd.to_datetime(date_match.group(), errors='coerce')
+                        if pd.notna(val) and pd.notna(dt_parsed):
+                            values_list.append(float(val))
+                            dates_list.append(dt_parsed)
                         
-                final_series_df = pd.DataFrame({'ds': dates_list, 'y': values_list}).sort_values('ds').reset_index(drop=True)
+                final_series_df = pd.DataFrame({'ds': dates_list, 'y': values_list})
+                # Drop duplicate month mappings and sort sequentially
+                final_series_df = final_series_df.groupby('ds', as_index=False).last().sort_values('ds').reset_index(drop=True)
                 
                 # Allocation Summary Matrix for Pie Charts
                 allocation_array = []
@@ -106,35 +112,11 @@ def parse_financial_data(file):
                         pass
                 breakdown_df = pd.DataFrame(allocation_array)
                 
-                pd_stream.sidebar.success(f"✅ Active View: {selected_product}")
+                pd_stream.sidebar.success(f"✅ Ingested 2024 Actuals + 2025 Pipeline targets for: {selected_product}")
                 return final_series_df, breakdown_df, False
-
-        # SCENARIO B: Flat Standard List View
-        else:
-            potential_date = None
-            potential_val = None
-            for col in raw_df.columns:
-                if pd.to_datetime(raw_df[col], errors='coerce').notna().sum() > len(raw_df) * 0.4:
-                    potential_date = col
-                elif pd.to_numeric(raw_df[col], errors='coerce').notna().sum() > len(raw_df) * 0.4:
-                    potential_val = col
-                    
-            if potential_date and potential_val:
-                flat_df = raw_df[[potential_date, potential_val]].copy()
-                flat_df.columns = ['ds', 'y']
-                flat_df['ds'] = pd.to_datetime(flat_df['ds'], errors='coerce')
-                flat_df['y'] = pd.to_numeric(flat_df['y'], errors='coerce')
-                flat_df = flat_df.dropna().sort_values('ds').reset_index(drop=True)
-                
-                flat_df['ds'] = flat_df['ds'].dt.to_period('M').dt.to_timestamp()
-                flat_df = flat_df.groupby('ds', as_index=False).sum()
-                
-                breakdown_df = pd.DataFrame({'Product': ['Database Core Target'], 'Total_Volume': [flat_df['y'].sum()]})
-                pd_stream.sidebar.success("✅ Active View: Standard Database Ledger")
-                return flat_df, breakdown_df, False
                 
         return None, None, True
-    except:
+    except Exception as e:
         return None, None, True
 
 # Route active datasets
@@ -151,8 +133,8 @@ if is_demo:
     else:
         pd_stream.sidebar.warning("⚠️ Formatting schema unreadable. Reverted to balanced baseline profile placeholders.")
         
-    # Generate multi-year baseline mock profile (2024 to 2026)
-    dates = pd.date_range(start="2024-01-01", end="2026-06-01", freq="MS")
+    # Generate multi-year baseline mock profile (2024 to 2025)
+    dates = pd.date_range(start="2024-01-01", end="2025-12-01", freq="MS")
     trend = np.linspace(3500, 6500, len(dates))
     seasonal_effect = np.sin(np.arange(len(dates)) * (2 * np.pi / 12)) * 600
     revenue = trend + seasonal_effect + np.random.normal(0, 40, len(dates))
@@ -181,7 +163,7 @@ filtered_df = df[(df['Year'].isin(selected_years)) & (df['Month_Name'].isin(sele
 if filtered_df.empty or len(filtered_df) < 2:
     pd_stream.error("⚠️ Filter Error: Please expand your Year/Month filter selections to include at least 2 historical data periods.")
 else:
-    # 4. PREDICTIVE FORECASTING ENGINE
+    # 4. PREDICTIVE FORECASTING ENGINE (Prophet models full 2024+2025 data and extends to 2026)
     has_sufficient_breadth = len(selected_years) > 1
     model = Prophet(yearly_seasonality=has_sufficient_breadth, weekly_seasonality=False, daily_seasonality=False)
     model.fit(filtered_df[['ds', 'y']])
@@ -192,18 +174,29 @@ else:
     
     # Structural separation parsing maps
     historical_clean = filtered_df[['ds', 'y']].copy().rename(columns={'y': 'Value'})
-    historical_clean['Data Type'] = 'Historical Actual'
+    historical_clean['Data Type'] = 'Historical/Pre-Calculated Actuals'
     
     forecast_clean = forecast[['ds', 'yhat']].tail(forecast_months).copy().rename(columns={'yhat': 'Value'})
-    forecast_clean['Data Type'] = 'AI Future Projection'
+    forecast_clean['Data Type'] = 'AI Future Projection (2026 Target)'
     
     combined_rendering_df = pd.concat([historical_clean, forecast_clean], ignore_index=True)
 
     # 5. DYNAMIC INTERACTIVE VISUALIZATION MATRIX
-    pd_stream.subheader(f"📊 Active Canvas Profile: {chart_selection.split('(')[0].strip()}")
+    pd_stream.subheader(f"🎨 Active Canvas Profile: {chart_selection.split('(')[0].strip()}")
     
     if "Line Chart" in chart_selection:
         fig_line = go.Figure()
-        fig_line.add_trace(go.Scatter(x=filtered_df['ds'], y=filtered_df['y'], name="Historical Actuals", mode='markers+lines', line=dict(color='#2b2b2b', width=2), marker=dict(size=6)))
-        fig_line.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'], name="AI Midpoint Target Forecast", line=dict(color='#0066cc', width=3)))
+        fig_line.add_trace(go.Scatter(x=filtered_df['ds'], y=filtered_df['y'], name="Excel Values (2024-2025)", mode='markers+lines', line=dict(color='#2b2b2b', width=2), marker=dict(size=6)))
+        fig_line.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'], name="AI 2026 Future Forecast", line=dict(color='#0066cc', width=3)))
         fig_line.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_upper'], name="Optimistic Ceiling (Upper Bound)", line=dict(dash='dash', color='rgba(0,102,204,0.3)')))
+        fig_line.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_lower'], name="Conservative Floor (Lower Bound)", line=dict(dash='dash', color='rgba(0,102,204,0.3)'), fill='tonexty'))
+        fig_line.update_layout(xaxis_title="Timeline Interval", yaxis_title="Valuation Scale ($)", template="plotly_white")
+        pd_stream.plotly_chart(fig_line, use_container_width=True)
+        
+    elif "Column Chart" in chart_selection:
+        fig_bar = px.bar(
+            combined_rendering_df, 
+            x='ds', 
+            y='Value', 
+            color='Data Type', 
+            barmode='group',
